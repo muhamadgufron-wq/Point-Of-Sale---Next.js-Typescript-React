@@ -24,7 +24,7 @@ export interface InputSearchSelectProps<T extends SearchOption = SearchOption> {
    * Bisa berupa array data langsung [{ id, label }]
    * ATAU fungsi API yang me-return Promise<T[]> (misal: getCategoryResourcesApi).
    */
-  options: T[] | (() => Promise<T[]>);
+  options: T[] | ((query?: string) => Promise<T[]>);
   /**
    * Nilai yang dipilih (bisa ID: number/string, atau object T, atau null)
    */
@@ -37,6 +37,14 @@ export interface InputSearchSelectProps<T extends SearchOption = SearchOption> {
     value: number | string | null,
     selectedOption?: T | null
   ) => void;
+  /**
+   * Callback saat user mencari / memfilter (sudah didebounce)
+   */
+  onSearch?: (query: string) => void;
+  /**
+   * Delay waktu tunggu debounce dalam milidetik (default: 400ms)
+   */
+  debounceMs?: number;
   placeholder?: string;
   emptyMessage?: string;
   showClear?: boolean;
@@ -54,6 +62,8 @@ export function InputSearchSelect<T extends SearchOption = SearchOption>({
   options,
   value,
   onChange,
+  onSearch,
+  debounceMs = 400,
   placeholder = "Pilih opsi...",
   emptyMessage = "Tidak ada hasil ditemukan",
   showClear = true,
@@ -72,13 +82,15 @@ export function InputSearchSelect<T extends SearchOption = SearchOption>({
   const [loading, setLoading] = React.useState<boolean>(
     typeof options === "function"
   );
+  const [searchQuery, setSearchQuery] = React.useState<string>("");
+  const debouncedQuery = useDebounce(searchQuery, debounceMs);
 
   React.useEffect(() => {
     let isMounted = true;
 
     if (typeof options === "function") {
       setLoading(true);
-      options()
+      options(debouncedQuery)
         .then((data) => {
           if (isMounted) {
             setItems(Array.isArray(data) ? data : []);
@@ -100,10 +112,12 @@ export function InputSearchSelect<T extends SearchOption = SearchOption>({
       setLoading(false);
     }
 
+    onSearch?.(debouncedQuery);
+
     return () => {
       isMounted = false;
     };
-  }, [options]);
+  }, [options, debouncedQuery, onSearch]);
 
   // Cari item yang sesuai dengan value yang diberikan
   const selectedItem = React.useMemo(() => {
@@ -127,6 +141,14 @@ export function InputSearchSelect<T extends SearchOption = SearchOption>({
       items={items}
       value={selectedItem}
       onValueChange={handleValueChange}
+      onInputValueChange={(inputValue, details) => {
+        if (
+          details.reason === "input-change" ||
+          details.reason === "input-clear"
+        ) {
+          setSearchQuery(inputValue);
+        }
+      }}
       itemToStringLabel={(item) => (item ? String(item.label) : "")}
       isItemEqualToValue={(a, b) =>
         a && b ? String(a.id) === String(b.id) : a === b
